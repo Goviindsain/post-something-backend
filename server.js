@@ -4,6 +4,8 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const multer = require('multer');
+const storage = multer.memoryStorage();
+
 const path = require('path');
 require('dotenv').config(); // Load environment variables
 
@@ -20,10 +22,19 @@ app.use(express.json()); // Parse JSON body
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Multer Configuration
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, 'uploads/'),
-    filename: (req, file, cb) => cb(null, `${file.fieldname}-${Date.now()}${path.extname(file.originalname)}`)
+// const storage = multer.diskStorage({
+//     destination: (req, file, cb) => cb(null, 'uploads/'),
+//     filename: (req, file, cb) => cb(null, `${file.fieldname}-${Date.now()}${path.extname(file.originalname)}`)
+// });
+
+
+const cloudinary = require('cloudinary').v2;
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
 });
+
 
 const fileFilter = (req, file, cb) => {
     const allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
@@ -33,6 +44,8 @@ const fileFilter = (req, file, cb) => {
         cb(new Error('Only image files are allowed'), false);
     }
 };
+
+
 
 const upload = multer({ storage, fileFilter });
 
@@ -66,16 +79,45 @@ app.get('/api/posts', async (req, res) => {
 });
 
 // Create a new post
+// app.post('/api/posts', upload.single('file'), async (req, res) => {
+//     try {
+//         const { title, content } = req.body;
+//         const file = req.file?.filename;
+
+//         if (!title || !content) {
+//             return res.status(400).json({ error: 'Title and content are required' });
+//         }
+
+//         const post = new Post({ title, content, file });
+//         await post.save();
+//         res.status(201).json(post);
+//     } catch (error) {
+//         console.error('Error creating post:', error);
+//         res.status(500).json({ error: 'Failed to create post' });
+//     }
+// });
+
 app.post('/api/posts', upload.single('file'), async (req, res) => {
     try {
         const { title, content } = req.body;
-        const file = req.file?.filename;
 
         if (!title || !content) {
             return res.status(400).json({ error: 'Title and content are required' });
         }
 
-        const post = new Post({ title, content, file });
+        let fileUrl = null;
+        if (req.file) {
+            const result = await cloudinary.uploader.upload_stream({
+                folder: 'posts',
+                resource_type: 'auto'
+            }, (error, result) => {
+                if (error) throw new Error('Failed to upload file');
+                return result;
+            }).end(req.file.buffer);
+            fileUrl = result.secure_url;
+        }
+
+        const post = new Post({ title, content, file: fileUrl });
         await post.save();
         res.status(201).json(post);
     } catch (error) {
