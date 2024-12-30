@@ -21,11 +21,7 @@ app.use(cors({
 app.use(express.json()); // Parse JSON body
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Multer Configuration
-// const storage = multer.diskStorage({
-//     destination: (req, file, cb) => cb(null, 'uploads/'),
-//     filename: (req, file, cb) => cb(null, `${file.fieldname}-${Date.now()}${path.extname(file.originalname)}`)
-// });
+
 
 
 const cloudinary = require('cloudinary').v2;
@@ -78,24 +74,7 @@ app.get('/api/posts', async (req, res) => {
     }
 });
 
-// Create a new post
-// app.post('/api/posts', upload.single('file'), async (req, res) => {
-//     try {
-//         const { title, content } = req.body;
-//         const file = req.file?.filename;
 
-//         if (!title || !content) {
-//             return res.status(400).json({ error: 'Title and content are required' });
-//         }
-
-//         const post = new Post({ title, content, file });
-//         await post.save();
-//         res.status(201).json(post);
-//     } catch (error) {
-//         console.error('Error creating post:', error);
-//         res.status(500).json({ error: 'Failed to create post' });
-//     }
-// });
 
 app.post('/api/posts', upload.single('file'), async (req, res) => {
     try {
@@ -107,24 +86,28 @@ app.post('/api/posts', upload.single('file'), async (req, res) => {
 
         let fileUrl = null;
         if (req.file) {
-            const result = await cloudinary.uploader.upload_stream({
-                folder: 'posts',
-                resource_type: 'auto'
-            }, (error, result) => {
-                if (error) throw new Error('Failed to upload file');
-                return result;
-            }).end(req.file.buffer);
-            fileUrl = result.secure_url;
+            const result = await new Promise((resolve, reject) => {
+                const uploadStream = cloudinary.uploader.upload_stream(
+                    { folder: 'posts', resource_type: 'auto' },
+                    (error, result) => {
+                        if (error) return reject(error);
+                        resolve(result);
+                    }
+                );
+                uploadStream.end(req.file.buffer); // Stream the buffer
+            });
+            fileUrl = result.secure_url; // Get the Cloudinary URL
         }
 
         const post = new Post({ title, content, file: fileUrl });
         await post.save();
         res.status(201).json(post);
     } catch (error) {
-        console.error('Error creating post:', error);
+        console.error('Error creating post:', error.message || error);
         res.status(500).json({ error: 'Failed to create post' });
     }
 });
+
 
 // Like a post
 app.post('/api/posts/like/:postId', async (req, res) => {
